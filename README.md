@@ -30,7 +30,7 @@ The dataset contains transactional records from a retail business with the follo
 - UnitPrice: Price per unit  
 - CustomerID: Unique customer identifier  
 - Country: Customer location  
-
+(Some data may not be uploaded due to size)
 ---
 
 ## 🧹 Data Cleaning
