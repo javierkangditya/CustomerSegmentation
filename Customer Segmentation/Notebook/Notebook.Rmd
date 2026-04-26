@@ -1,0 +1,399 @@
+---
+title: "Customer Segmentation Analysis (RFM + Clustering)"
+author: "Javier Kangditya"
+output: html_document
+---
+
+# Introduction
+
+## Project Overview
+This project analyzes customer transaction behavior and segments customers using the RFM (Recency, Frequency, Monetary) framework combined with clustering techniques.
+
+The objective is to uncover meaningful customer groups to support data-driven marketing and retention strategies.
+
+Unlike predictive modeling tasks, this project focuses on unsupervised learning to identify natural patterns in customer behavior.
+
+---
+
+## Dataset Description
+The dataset contains retail transaction records with the following variables:
+
+- InvoiceNo  
+- StockCode  
+- Description  
+- Quantity  
+- InvoiceDate  
+- UnitPrice  
+- CustomerID  
+- Country  
+
+This dataset represents real-world transactional behavior suitable for customer segmentation analysis.
+
+---
+
+## Project Goals
+- Clean and prepare transactional data  
+- Construct RFM features per customer  
+- Perform exploratory data analysis (EDA)  
+- Apply clustering to segment customers  
+- Interpret customer segments from a business perspective  
+
+---
+
+# 1. Data Cleaning
+```{r data_cleaning, message=FALSE, warning=FALSE}
+# Load necessary libraries
+library(tidyverse)
+library(lubridate)
+
+# Load dataset
+data <- read.csv("Data/Raw/data.csv")
+
+# Preview dataset
+glimpse(data)
+head(data)
+
+# Placeholder: handle missing values, duplicates, and correct data types
+
+# Remove duplicates
+data <- data %>% distinct()
+
+# Drop rows with missing CustomerID
+data <- data %>% drop_na(CustomerID)
+
+# Remove cancelled / invalid transactions
+data <- data %>%
+  filter(Quantity > 0, UnitPrice > 0)
+
+# Create TotalPrice feature
+data <- data %>%
+  mutate(TotalPrice = Quantity * UnitPrice)
+
+# Convert InvoiceDate to datetime
+data$InvoiceDate <- as.POSIXct(data$InvoiceDate, format = "%m/%d/%Y %H:%M")
+
+# Check cleaned data
+glimpse(data)
+
+library(openxlsx)
+
+# Save processed data
+write.csv(data, 
+          "Data/Processed/retail_data_clean.csv", 
+          row.names = FALSE)
+```
+
+---
+
+# 2. RFM Feature Engineering
+```{r rfm_feature_engineering, message=FALSE, warning=FALSE}
+
+# Load library
+library(dplyr)
+library(lubridate)
+
+# -----------------------------
+# 1. Set snapshot date
+# -----------------------------
+snapshot_date <- max(data$InvoiceDate) + days(1)
+
+# -----------------------------
+# 2. Build RFM table
+# -----------------------------
+rfm <- data %>%
+  group_by(CustomerID) %>%
+  summarise(
+    Recency = as.numeric(snapshot_date - max(InvoiceDate)),
+    Frequency = n_distinct(InvoiceNo),
+    Monetary = sum(TotalPrice)
+  )
+
+# -----------------------------
+# 3. Inspect RFM result
+# -----------------------------
+glimpse(rfm)
+head(rfm)
+
+# Check summary statistics
+summary(rfm)
+
+# Save RFM table
+write.csv(rfm,
+          "Data/Processed/rfm_table.csv",
+          row.names = FALSE)
+```        
+
+---
+
+# 3. Exploratory Data Analysis (EDA)
+```{r eda, message=FALSE, warning=FALSE}
+library(ggplot2)
+library(dplyr)
+
+# -----------------------------
+# 1. Summary statistics
+# -----------------------------
+summary(rfm)
+
+# -----------------------------
+# 2. Recency Distribution
+# -----------------------------
+p_recency <- ggplot(rfm, aes(x = Recency)) +
+  geom_histogram(bins = 30, fill = "steelblue", color = "white") +
+  theme_minimal() +
+  labs(
+    title = "Distribution of Recency",
+    x = "Recency (Days)",
+    y = "Number of Customers"
+  )
+
+p_recency
+
+ggsave("Outputs/Figures/recency_distribution.png",
+       plot = p_recency,
+       width = 6, height = 4, dpi = 300)
+
+# -----------------------------
+# 3. Frequency Distribution
+# -----------------------------
+p_frequency <- ggplot(rfm, aes(x = Frequency)) +
+  geom_histogram(bins = 100, fill = "darkgreen", color = "white") +
+  theme_minimal() +
+  labs(
+    title = "Distribution of Frequency",
+    x = "Frequency (Number of Purchases)",
+    y = "Number of Customers"
+  )
+
+p_frequency
+
+ggsave("Outputs/Figures/frequency_distribution.png",
+       plot = p_frequency,
+       width = 6, height = 4, dpi = 300)
+
+# -----------------------------
+# 4. Monetary Distribution
+# -----------------------------
+p_monetary <- ggplot(rfm, aes(x = Monetary)) +
+  geom_histogram(bins = 100, fill = "orange", color = "white") +
+  theme_minimal() +
+  labs(
+    title = "Distribution of Monetary Value",
+    x = "Monetary Value",
+    y = "Number of Customers"
+  )
+
+p_monetary
+
+ggsave("Outputs/Figures/monetary_distribution.png",
+       plot = p_monetary,
+       width = 6, height = 4, dpi = 300)
+
+# -----------------------------
+# 5. Boxplots
+# -----------------------------
+p_box_r <- ggplot(rfm, aes(y = Recency)) +
+  geom_boxplot(fill = "steelblue") +
+  theme_minimal() +
+  labs(title = "Outliers in Recency")
+
+p_box_r
+
+ggsave("Outputs/Figures/recency_boxplot.png",
+       plot = p_box_r,
+       width = 6, height = 4, dpi = 300)
+
+p_box_f <- ggplot(rfm, aes(y = Frequency)) +
+  geom_boxplot(fill = "darkgreen") +
+  theme_minimal() +
+  labs(title = "Outliers in Frequency")
+
+p_box_f
+
+ggsave("Outputs/Figures/frequency_boxplot.png",
+       plot = p_box_f,
+       width = 6, height = 4, dpi = 300)
+
+p_box_m <- ggplot(rfm, aes(y = Monetary)) +
+  geom_boxplot(fill = "orange") +
+  theme_minimal() +
+  labs(title = "Outliers in Monetary Value")
+
+p_box_m
+
+ggsave("Outputs/Figures/monetary_boxplot.png",
+       plot = p_box_m,
+       width = 6, height = 4, dpi = 300)
+
+# -----------------------------
+# 6. Correlation
+# -----------------------------
+cor_matrix <- cor(rfm[, c("Recency", "Frequency", "Monetary")])
+cor_matrix
+```
+
+---
+
+# 4. Data Scaling for Clustering
+```{r data_scaling, message=FALSE, warning=FALSE}
+library(dplyr)
+
+# Select RFM features only
+rfm_features <- rfm %>%
+  select(Recency, Frequency, Monetary)
+
+# Standardize the data
+rfm_scaled <- scale(rfm_features)
+
+# Convert to data frame 
+rfm_scaled <- as.data.frame(rfm_scaled)
+
+# Check result
+summary(rfm_scaled)
+
+write.csv(rfm_scaled,
+          "Data/Processed/rfm_scaled.csv",
+          row.names = FALSE)
+```
+
+---
+
+# 5. Elbow Method
+```{r elbow_method, message=FALSE, warning=FALSE}
+
+set.seed(123)
+
+wss <- vector()
+
+# Try k from 1 to 10
+for (k in 1:10) {
+  kmeans_model <- kmeans(rfm_scaled, centers = k, nstart = 25)
+  wss[k] <- kmeans_model$tot.withinss
+}
+
+# Convert to data frame
+elbow_data <- data.frame(
+  k = 1:10,
+  wss = wss
+)
+
+# Plot Elbow Curve
+library(ggplot2)
+
+ggplot(elbow_data, aes(x = k, y = wss)) +
+  geom_line(color = "steelblue") +
+  geom_point(color = "red") +
+  theme_minimal() +
+  labs(
+    title = "Elbow Method for Optimal K",
+    x = "Number of Clusters (k)",
+    y = "Within-Cluster Sum of Squares (WSS)"
+  )
+
+# Save Elbow Method Plot
+ggsave("Outputs/Figures/elbow_method.png",
+       width = 6, height = 4, dpi = 300)
+```
+
+---
+
+# 6. K-Means Clustering
+```{r kmc, message=FALSE, warning=FALSE}
+set.seed(123)
+
+k_final <- 4
+
+kmeans_model <- kmeans(rfm_scaled, centers = k_final, nstart = 25)
+
+# Add cluster label to original RFM data
+rfm$Cluster <- as.factor(kmeans_model$cluster)
+
+# Check result
+head(rfm)
+
+# Save RFM with Cluster Labels
+write.csv(rfm,
+          "Data/Processed/rfm_with_clusters.csv",
+          row.names = FALSE)
+saveRDS(kmeans_model,
+        "Outputs/Models/kmeans_model.rds")
+```
+
+---
+
+# 7. Cluster Interpretation
+```{r cluster_interpretation, message=FALSE, warning=FALSE}
+cluster_summary <- rfm %>%
+  group_by(Cluster) %>%
+  summarise(
+    avg_recency = mean(Recency),
+    avg_frequency = mean(Frequency),
+    avg_monetary = mean(Monetary),
+    count = n()
+  ) %>%
+  arrange(avg_recency)
+
+cluster_summary
+
+write.csv(cluster_summary,
+          "Data/Processed/cluster_summary.csv",
+          row.names = FALSE)
+```
+
+---
+
+# 8. Cluster Visualization
+```{r cluster_visualization, message=FALSE, warning=FALSE}
+library(ggplot2)
+
+cluster_plot <- ggplot(rfm, aes(x = Frequency, y = Monetary, color = Cluster)) +
+  geom_point(alpha = 0.6) +
+  theme_minimal() +
+  labs(
+    title = "Customer Segments based on K-Means Clustering",
+    x = "Frequency (Purchase Count)",
+    y = "Monetary Value"
+  )
+
+cluster_plot
+
+ggsave("Outputs/Figures/kmeans_cluster_fm.png",
+       plot = cluster_plot,
+       width = 6, height = 4, dpi = 300)
+```
+
+---
+
+# Conclusion & Insights
+
+## 1. Summary of Findings
+
+- **Exploratory Data Analysis (EDA):**  
+  - Customer behavior shows strong skewness in `Frequency` and `Monetary`, indicating that a small group of customers contributes most of the revenue.  
+  - `Recency` reveals that a significant portion of customers have not purchased recently, indicating potential churn risk.  
+  - Outliers exist in `Monetary`, representing high-value customers (VIP segment).
+
+- **RFM Feature Engineering:**  
+  - RFM variables (`Recency`, `Frequency`, `Monetary`) were successfully constructed from transactional data.  
+  - These features provide a behavioral view of customers based on purchase timing, frequency, and spending value.
+
+- **Clustering Results (K-Means):**  
+  - Customers were segmented into multiple clusters using K-Means clustering.  
+  - Each cluster shows different behavioral patterns in terms of recency, frequency, and monetary value.  
+  - A small group of customers represents **high-value VIP customers**, while the largest group consists of **low-value or occasional customers**.
+
+## 2. Practical Implications
+
+- A small segment of customers contributes disproportionately to revenue, showing a clear **Pareto (80/20) effect**.  
+- **VIP customers** should be prioritized for retention strategies such as loyalty programs and exclusive offers.  
+- **Churn-risk customers** (high Recency) should be targeted with reactivation campaigns.  
+- **Occasional customers** represent growth potential through targeted promotions and engagement strategies.  
+- RFM segmentation provides a simple and effective framework for customer-centric marketing decisions.
+
+## 3. Recommendations
+
+- Focus retention strategies on **VIP customers** to maintain high revenue contribution.  
+- Implement **win-back campaigns** for inactive customers with high Recency values.  
+- Use targeted marketing campaigns to increase purchase frequency among occasional customers.  
+- Regularly update RFM segmentation to reflect changing customer behavior.  
+- Integrate this segmentation approach into CRM systems for data-driven marketing strategies.
